@@ -1,0 +1,19 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# Backups (not for repo)
+*.bak
+Si_CoCommander_*_backup*.cs
+Si_CoCommander_v*.cs
+
+# External mod sources (cloned for reference, not part of this repo)
+Si_BasicTeamBalance/
+Si_CommManagement/
+
+# Archives (local only)
+archive/
+
+# IDE
+.vs/
+*.user
