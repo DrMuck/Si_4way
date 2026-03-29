@@ -20,6 +20,12 @@ namespace Si_4way
     {
         // === Shared state ===
         public static bool Is4WayEnabled = false;
+
+        // === Events for cross-mod communication (Option A) ===
+        // Other mods subscribe via reflection. Fired when 4way round starts.
+        public static event Action<Team, Team> On4WayRoundStarted;  // (alienTeam, wildlifeTeam)
+        public static event Action On4WayRoundEnded;
+
         internal static Type _mpStrategyType = null;
         internal static MethodInfo _setCommanderMethod = null;
         internal static MethodInfo _synchCommanderMethod = null;
@@ -92,6 +98,17 @@ namespace Si_4way
             _wasOnWildlife.Clear();
             NestSpawn.ScheduleNestSpawn();
 
+            // Fire event for cross-mod communication
+            try
+            {
+                On4WayRoundStarted?.Invoke(_alienTeam, _wildlifeTeam);
+                MelonLogger.Msg("[4WAY] Fired On4WayRoundStarted event");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[4WAY] On4WayRoundStarted event error: {ex.Message}");
+            }
+
             return true;
         }
 
@@ -150,6 +167,8 @@ namespace Si_4way
                 resField.SetValue(_wildlifeTeam, resField.GetValue(_alienTeam));
                 MelonLogger.Msg("[4WAY] Copied UsableResource from Alien");
             }
+
+            // Unit cap adjustment is handled by Si_NoUnitLimits (via On4WayRoundStarted event)
 
             _wildlifeTeam.IsSpecial = false;
             _wildlifeTeam.StartingResources = 8000;
