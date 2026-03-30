@@ -21,6 +21,9 @@ namespace Si_4way
                     HelperMethods.RegisterPlayerCommand("wildcom", OnCmdWildCom, true);
                     HelperMethods.RegisterPlayerCommand("wildlife", OnCmdWildFps, true);
                     HelperMethods.RegisterPlayerCommand("alien", OnCmdAlien, true);
+                    HelperMethods.RegisterPlayerCommand("sol", OnCmdSol, true);
+                    HelperMethods.RegisterPlayerCommand("centauri", OnCmdCentauri, true);
+                    HelperMethods.RegisterAdminCommand("4waytol", OnCmd4WayTol, Power.Commander, "Set 4-way balance tolerance. Usage: !4waytol <number>");
                 }
                 catch (Exception ex)
                 {
@@ -53,6 +56,14 @@ namespace Si_4way
                 return;
             }
 
+            // Check if seat is taken by someone else
+            var currentCom = _wildlifeSetup?.Commander;
+            if (currentCom != null && currentCom != player)
+            {
+                SendToPlayer(player, $"Wildlife commander seat is taken by {currentCom.PlayerName}.");
+                return;
+            }
+
             try
             {
                 if (player.IsCommander && player.Team != null && player.Team != _wildlifeTeam)
@@ -75,6 +86,7 @@ namespace Si_4way
                     _synchCommanderMethod.Invoke(gm, new object[] { _wildlifeTeam });
 
                 TrackWildlifeMember(player);
+                FireRoleChangedEvent(player, 2); // 2 = COMMANDER
                 MelonLogger.Msg($"[4WAY] {player.PlayerName} → Wildlife commander");
                 SendToAll($"{player.PlayerName} is now Wildlife Commander!");
             }
@@ -172,6 +184,83 @@ namespace Si_4way
             UntrackWildlifeMember(player);
             SendToPlayer(player, "Set to Alien side. Use H to join Alien via UI, or !wildlife to switch back.");
             MelonLogger.Msg($"[4WAY] {player.PlayerName} switched to Alien sub-team");
+        }
+
+        private static void OnCmd4WayTol(Player? player, string args)
+        {
+            var parts = args.Split(' ');
+            if (parts.Length < 2 || !int.TryParse(parts[1], out int val) || val < 0)
+            {
+                SendToPlayer(player, $"Balance tolerance: {_balanceTolerance}. Usage: !4waytol <number>");
+                return;
+            }
+            _balanceTolerance = val;
+            SendToAll($"4-Way balance tolerance set to {_balanceTolerance}");
+            MelonLogger.Msg($"[4WAY] Balance tolerance set to {_balanceTolerance}");
+        }
+
+        private static void OnCmdSol(Player? player, string args)
+        {
+            if (player == null) return;
+            if (!Is4WayEnabled) { SendToPlayer(player, "4-Way mode not enabled."); return; }
+            if (_solTeam == null) { SendToPlayer(player, "Sol team not found."); return; }
+
+            UntrackWildlifeMember(player);
+
+            if (player.IsCommander && player.Team != null)
+            {
+                try
+                {
+                    var gm = GameMode.CurrentGameMode;
+                    if (gm != null && _setCommanderMethod != null)
+                    {
+                        _setCommanderMethod.Invoke(gm, new object[] { player.Team, null });
+                        if (_synchCommanderMethod != null)
+                            _synchCommanderMethod.Invoke(gm, new object[] { player.Team });
+                    }
+                }
+                catch { }
+            }
+
+            GameMode.CurrentGameMode?.DestroyAllUnitsForPlayer(player);
+            player.Team = _solTeam;
+            NetworkLayer.SendPlayerSelectTeam(player, _solTeam);
+            GameMode.CurrentGameMode?.SpawnUnitForPlayer(player, _solTeam);
+
+            SendToPlayer(player, "Switched to Sol!");
+            MelonLogger.Msg($"[4WAY] {player.PlayerName} switched to Sol");
+        }
+
+        private static void OnCmdCentauri(Player? player, string args)
+        {
+            if (player == null) return;
+            if (!Is4WayEnabled) { SendToPlayer(player, "4-Way mode not enabled."); return; }
+            if (_centTeam == null) { SendToPlayer(player, "Centauri team not found."); return; }
+
+            UntrackWildlifeMember(player);
+
+            if (player.IsCommander && player.Team != null)
+            {
+                try
+                {
+                    var gm = GameMode.CurrentGameMode;
+                    if (gm != null && _setCommanderMethod != null)
+                    {
+                        _setCommanderMethod.Invoke(gm, new object[] { player.Team, null });
+                        if (_synchCommanderMethod != null)
+                            _synchCommanderMethod.Invoke(gm, new object[] { player.Team });
+                    }
+                }
+                catch { }
+            }
+
+            GameMode.CurrentGameMode?.DestroyAllUnitsForPlayer(player);
+            player.Team = _centTeam;
+            NetworkLayer.SendPlayerSelectTeam(player, _centTeam);
+            GameMode.CurrentGameMode?.SpawnUnitForPlayer(player, _centTeam);
+
+            SendToPlayer(player, "Switched to Centauri!");
+            MelonLogger.Msg($"[4WAY] {player.PlayerName} switched to Centauri");
         }
     }
 }

@@ -20,6 +20,7 @@ namespace Si_4way
     {
         // === Shared state ===
         public static bool Is4WayEnabled = false;
+        internal static int _balanceTolerance = 1;
 
         // === Events for cross-mod communication (Option A) ===
         // Other mods subscribe via reflection. Fired when 4way round starts.
@@ -96,6 +97,8 @@ namespace Si_4way
             SetupWildlifeTeam();
             WinCondition.ResetState();
             _wasOnWildlife.Clear();
+            _commanderApplicants.Clear();
+            _lotteryDone = false;
             NestSpawn.ScheduleNestSpawn();
 
             // Fire event for cross-mod communication
@@ -191,6 +194,32 @@ namespace Si_4way
         internal static void SendToPlayer(Player player, string message)
         {
             HelperMethods.ReplyToCommand_Player(player, message);
+        }
+
+        /// <summary>
+        /// Fire AdminMod's Event_Roles.OnRoleChanged so the logging mod records the change.
+        /// role: 0=NONE, 1=INFANTRY, 2=COMMANDER
+        /// </summary>
+        internal static void FireRoleChangedEvent(Player player, byte role)
+        {
+            try
+            {
+                var eventRolesType = AppDomain.CurrentDomain.GetAssemblies()
+                    .SelectMany(a => { try { return a.GetTypes(); } catch { return Array.Empty<Type>(); } })
+                    .FirstOrDefault(t => t.Name == "Event_Roles");
+                if (eventRolesType != null)
+                {
+                    var fireMethod = eventRolesType.GetMethod("FireOnRoleChangedEvent",
+                        BindingFlags.Public | BindingFlags.Static);
+                    if (fireMethod != null)
+                    {
+                        // ETeamRole enum: NONE=0, UNIT=1, COMMANDER=2
+                        var roleEnum = Enum.ToObject(typeof(GameModeExt.ETeamRole), (int)role);
+                        fireMethod.Invoke(null, new object[] { player, roleEnum });
+                    }
+                }
+            }
+            catch { }
         }
 
         internal static void SendToAll(string message)

@@ -167,6 +167,7 @@ namespace Si_4way
                     if (al != null && al.Team == _wildlifeTeam)
                     {
                         al.Team = null;
+                        al.enabled = false; // fully disable spawner
                         disabled++;
                     }
                 }

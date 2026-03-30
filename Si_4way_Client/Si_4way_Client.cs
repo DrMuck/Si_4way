@@ -298,8 +298,17 @@ namespace Si_4way
                 {
                     if (gameMode != null && gameMode.BaseTeamSetups != null)
                     {
-                        gameMode.BaseTeamSetups.Add(_wildlifeSetup);
-                        MelonLogger.Msg("[4WAY-C] Injected Wildlife setup into BaseTeamSetups list");
+                        // Duplicate guard — check if Wildlife is already in the list
+                        bool alreadyInjected = false;
+                        foreach (var s in gameMode.BaseTeamSetups)
+                        {
+                            if (s != null && s.Team == _wildlifeTeam) { alreadyInjected = true; break; }
+                        }
+                        if (!alreadyInjected)
+                        {
+                            gameMode.BaseTeamSetups.Add(_wildlifeSetup);
+                            MelonLogger.Msg("[4WAY-C] Injected Wildlife setup into BaseTeamSetups list");
+                        }
                     }
                 }
                 catch (Exception ex2)
