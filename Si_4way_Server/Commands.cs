@@ -24,6 +24,7 @@ namespace Si_4way
                     HelperMethods.RegisterPlayerCommand("sol", OnCmdSol, true);
                     HelperMethods.RegisterPlayerCommand("centauri", OnCmdCentauri, true);
                     HelperMethods.RegisterAdminCommand("4waytol", OnCmd4WayTol, Power.Commander, "Set 4-way balance tolerance. Usage: !4waytol <number>");
+                    HelperMethods.RegisterPlayerCommand("transfer", OnCmdTransfer, true);
                 }
                 catch (Exception ex)
                 {
@@ -197,6 +198,49 @@ namespace Si_4way
             _balanceTolerance = val;
             SendToAll($"4-Way balance tolerance set to {_balanceTolerance}");
             MelonLogger.Msg($"[4WAY] Balance tolerance set to {_balanceTolerance}");
+        }
+
+        private static void OnCmdTransfer(Player? player, string args)
+        {
+            if (player == null) return;
+            if (!Is4WayEnabled) { SendToPlayer(player, "4-Way mode not enabled."); return; }
+            if (!player.IsCommander) { SendToPlayer(player, "Only commanders can transfer resources."); return; }
+            if (player.Team == null) { SendToPlayer(player, "You're not on a team."); return; }
+
+            // Parse amount
+            var parts = args.Split(' ');
+            if (parts.Length < 2 || !int.TryParse(parts[1], out int amount) || amount <= 0)
+            {
+                SendToPlayer(player, "Usage: !transfer <amount>");
+                return;
+            }
+
+            // Find ally team
+            Team senderTeam = player.Team;
+            Team? allyTeam = null;
+            if (senderTeam == _alienTeam) allyTeam = _wildlifeTeam;
+            else if (senderTeam == _wildlifeTeam) allyTeam = _alienTeam;
+            else if (senderTeam == _solTeam) allyTeam = _centTeam;
+            else if (senderTeam == _centTeam) allyTeam = _solTeam;
+
+            if (allyTeam == null) { SendToPlayer(player, "No allied team found."); return; }
+
+            // Check sender has enough
+            int available = senderTeam.TotalResources;
+            if (amount > available)
+            {
+                SendToPlayer(player, $"Not enough resources. You have {available}.");
+                return;
+            }
+
+            // Transfer: deduct from sender, add to receiver
+            senderTeam.StartingResources -= amount;
+            allyTeam.StartingResources += amount;
+
+            string msg = $"{player.PlayerName} transferred {amount} resources from {senderTeam.TeamShortName} to {allyTeam.TeamShortName}";
+            MelonLogger.Msg($"[4WAY] {msg}");
+            SendToAll(msg);
+            WriteToGameLog($"\"{player.PlayerName}\" triggered \"resource_transfer\" (amount \"{amount}\") (from \"{senderTeam.TeamShortName}\") (to \"{allyTeam.TeamShortName}\")");
         }
 
         private static void OnCmdSol(Player? player, string args)

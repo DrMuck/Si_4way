@@ -19,6 +19,8 @@ namespace Si_4way
         private static bool _solHQWasAlive = true;
         private static bool _centHQWasAlive = true;
         private static bool _gameEndTriggered = false;
+        private static float _winCheckTimer = 0f;
+        private const float WIN_CHECK_INTERVAL = 0.2f;
 
         internal static class WinCondition
         {
@@ -49,8 +51,13 @@ namespace Si_4way
                 if (GameMode.CurrentGameMode == null || !GameMode.CurrentGameMode.GameBegun) return;
                 if (_alienTeam == null || _wildlifeTeam == null) return;
 
-                bool alienHasCritical = _alienTeam.GetHasAnyCritical();
-                bool wildlifeHasCritical = _wildlifeTeam.GetHasAnyCritical();
+                // Throttle: only check every 200ms instead of every frame
+                _winCheckTimer -= UnityEngine.Time.deltaTime;
+                if (_winCheckTimer > 0f) return;
+                _winCheckTimer = WIN_CHECK_INTERVAL;
+
+                bool alienHasCritical = HasCriticalStructure(_alienTeam);
+                bool wildlifeHasCritical = HasCriticalStructure(_wildlifeTeam);
 
                 // Alien queen death → migrate to Wildlife
                 if (!alienHasCritical && _alienQueenWasAlive)
@@ -74,8 +81,8 @@ namespace Si_4way
                 // Human side migrations
                 if (_solTeam != null && _centTeam != null)
                 {
-                    bool solHasCritical = _solTeam.GetHasAnyCritical();
-                    bool centHasCritical = _centTeam.GetHasAnyCritical();
+                    bool solHasCritical = HasCriticalStructure(_solTeam);
+                    bool centHasCritical = HasCriticalStructure(_centTeam);
 
                     if (!solHasCritical && _solHQWasAlive)
                     {
@@ -119,6 +126,22 @@ namespace Si_4way
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Lightweight check: only iterates structures (not units) for Critical flag.
+        /// Much cheaper than Team.GetHasAnyCritical() which also iterates all units.
+        /// </summary>
+        private static bool HasCriticalStructure(Team team)
+        {
+            if (team == null) return false;
+            foreach (var structure in team.Structures)
+            {
+                if (structure != null && structure.ObjectInfo != null &&
+                    structure.ObjectInfo.Critical && !structure.IsDestroyed)
+                    return true;
+            }
+            return false;
         }
 
         // === GetHasLost: linked elimination ===

@@ -10,7 +10,6 @@ namespace Si_4way
     /// </summary>
     public partial class Si_4way
     {
-        private static bool _sharingDetection = false;
 
         internal static class Alliance
         {
@@ -46,15 +45,7 @@ namespace Si_4way
                     }
                 }
 
-                var detectTarget = typeof(Team).GetMethod("DetectTarget",
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null, new System.Type[] { typeof(Target), typeof(Sensor) }, null);
-                if (detectTarget != null)
-                {
-                    harmony.Patch(detectTarget,
-                        postfix: new HarmonyMethod(typeof(Si_4way), nameof(Postfix_DetectTarget)));
-                    MelonLogger.Msg("Patched DetectTarget for shared FOW");
-                }
+                // Shared FOW removed — DetectTarget only gives minimap dots, not fog clearing
             }
         }
 
@@ -121,33 +112,5 @@ namespace Si_4way
             return true;
         }
 
-        public static void Postfix_DetectTarget(Team __instance, Target target, Sensor sensor)
-        {
-            if (!Is4WayEnabled || _sharingDetection) return;
-            if (__instance == null || target == null) return;
-            if (_alienTeam == null || _wildlifeTeam == null) return;
-
-            Team allyTeam = null;
-            if (__instance == _alienTeam) allyTeam = _wildlifeTeam;
-            else if (__instance == _wildlifeTeam) allyTeam = _alienTeam;
-            else
-            {
-                foreach (var t in Team.Teams)
-                {
-                    if (t != null && t != __instance && t != _alienTeam && t != _wildlifeTeam && !t.IsSpecial)
-                    {
-                        allyTeam = t;
-                        break;
-                    }
-                }
-            }
-
-            if (allyTeam == null) return;
-
-            _sharingDetection = true;
-            try { allyTeam.DetectTarget(target, sensor); }
-            catch { }
-            _sharingDetection = false;
-        }
     }
 }

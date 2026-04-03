@@ -222,6 +222,26 @@ namespace Si_4way
             catch { }
         }
 
+        /// <summary>
+        /// Write to the Half-Life Logger's log file (Si_Logging.PrintLogLine) via reflection.
+        /// </summary>
+        internal static void WriteToGameLog(string message)
+        {
+            try
+            {
+                var loggingType = AppDomain.CurrentDomain.GetAssemblies()
+                    .SelectMany(a => { try { return a.GetTypes(); } catch { return Array.Empty<Type>(); } })
+                    .FirstOrDefault(t => t.Name == "HL_Logging");
+                if (loggingType != null)
+                {
+                    var printMethod = loggingType.GetMethod("PrintLogLine",
+                        BindingFlags.Public | BindingFlags.Static);
+                    printMethod?.Invoke(null, new object[] { message, false });
+                }
+            }
+            catch { }
+        }
+
         internal static void SendToAll(string message)
         {
             HelperMethods.ReplyToCommand(message);
