@@ -12,7 +12,9 @@ namespace Si_4way
     public partial class Si_4way
     {
         private static bool _needWildlifeNestSpawn = false;
+        private static bool _needDualHQSpawn = false;
         private static float _nestSpawnDelay = 0f;
+        private static float _dualHQSpawnDelay = 0f;
 
         internal static class NestSpawn
         {
@@ -37,6 +39,12 @@ namespace Si_4way
                 _nestSpawnDelay = 3f;
             }
 
+            public static void ScheduleDualHQSpawn()
+            {
+                _needDualHQSpawn = true;
+                _dualHQSpawnDelay = 3f;
+            }
+
             public static void OnLateUpdate()
             {
                 if (_needWildlifeNestSpawn && GameMode.CurrentGameMode != null)
@@ -47,6 +55,16 @@ namespace Si_4way
                         _needWildlifeNestSpawn = false;
                         SpawnWildlifeNest();
                         DisableWildlifeAmbientLife();
+                    }
+                }
+
+                if (_needDualHQSpawn && GameMode.CurrentGameMode != null)
+                {
+                    _dualHQSpawnDelay -= Time.deltaTime;
+                    if (_dualHQSpawnDelay <= 0f)
+                    {
+                        _needDualHQSpawn = false;
+                        SpawnDualHQs();
                     }
                 }
             }
@@ -87,6 +105,56 @@ namespace Si_4way
                 SendToAll($"Wildlife nest spawned ({posSource})!");
             }
             catch (Exception ex) { MelonLogger.Error($"[4WAY] SpawnWildlifeNest: {ex.Message}"); }
+        }
+
+        private static void SpawnDualHQs()
+        {
+            if (!IsServer) return;
+            try
+            {
+                if (_solTeam == null || _centTeam == null) { FindTeams(); }
+                if (_solTeam == null || _centTeam == null) { MelonLogger.Error("[4WAY] DualHQ: Sol or Cent team not found"); return; }
+                if (_spawnPrefabMethod == null) NestSpawn.ResolveSpawnMethod();
+                if (_spawnPrefabMethod == null) { MelonLogger.Error("[4WAY] DualHQ: SpawnPrefab not resolved"); return; }
+
+                var paramCount = _spawnPrefabMethod.GetParameters().Length;
+                const float offset = 30f; // meters offset from existing HQ
+
+                // Find Sol's existing HQ position, spawn Cent HQ next to it
+                ObjectInfo centHQInfo = _centTeam.BaseStructure;
+                if (centHQInfo != null && centHQInfo.Prefab != null)
+                {
+                    var solHQ = _solTeam.GetFirstStructureOfType(_solTeam.BaseStructure);
+                    if (solHQ != null)
+                    {
+                        var solPos = solHQ.transform.position;
+                        var spawnPos = new Vector3(solPos.x + offset, solPos.y, solPos.z + offset);
+                        _spawnPrefabMethod.Invoke(null, BuildSpawnArgs(centHQInfo.Prefab, _solTeam, spawnPos, paramCount));
+                        MelonLogger.Msg($"[4WAY] DualHQ: Spawned Cent HQ for Sol at ({spawnPos.x:F0}, {spawnPos.y:F1}, {spawnPos.z:F0})");
+                    }
+                    else
+                        MelonLogger.Warning("[4WAY] DualHQ: Sol HQ structure not found");
+                }
+
+                // Find Cent's existing HQ position, spawn Sol HQ next to it
+                ObjectInfo solHQInfo = _solTeam.BaseStructure;
+                if (solHQInfo != null && solHQInfo.Prefab != null)
+                {
+                    var centHQ = _centTeam.GetFirstStructureOfType(_centTeam.BaseStructure);
+                    if (centHQ != null)
+                    {
+                        var centPos = centHQ.transform.position;
+                        var spawnPos = new Vector3(centPos.x + offset, centPos.y, centPos.z + offset);
+                        _spawnPrefabMethod.Invoke(null, BuildSpawnArgs(solHQInfo.Prefab, _centTeam, spawnPos, paramCount));
+                        MelonLogger.Msg($"[4WAY] DualHQ: Spawned Sol HQ for Cent at ({centPos.x:F0}, {centPos.y:F1}, {centPos.z:F0})");
+                    }
+                    else
+                        MelonLogger.Warning("[4WAY] DualHQ: Cent HQ structure not found");
+                }
+
+                SendToAll("Dual HQ spawned! Both human factions have access to both tech trees.");
+            }
+            catch (Exception ex) { MelonLogger.Error($"[4WAY] SpawnDualHQs: {ex.Message}"); }
         }
 
         private static Vector3 GetWildlifeSpawnFromMapBalance()

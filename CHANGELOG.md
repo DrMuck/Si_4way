@@ -2,6 +2,30 @@
 
 ---
 
+## v1.8.0 (2026-04-12) — Event-based win conditions, allied voice chat, DualHQ
+
+### Major
+- **Event-based win conditions**: replaced 200ms polling (`OnLateUpdate`) with Harmony postfixes on `MP_Strategy.OnStructureDestroyed` and `StrategyMode.OnUnitDestroyed`. Zero cost when nothing dies; eliminates race condition where round ended immediately at start if structures weren't yet registered on teams.
+- **Allied voice chat**: Harmony prefix on `Player.GetCanReceiveVoice` — skips original method entirely for allied teams and returns `true`, so team voice (B key) works across Alien↔Wildlife and Sol↔Centauri allies. Prior `ref proximityOnly` approach failed because the original method reassigns the variable internally.
+- **DualHQ mode** (`!DualHQ`, admin): toggles spawning a Cent HQ 30m from Sol's HQ and a Sol HQ 30m from Cent's HQ at round start. Each human faction gets access to both tech trees. Uses `Team.GetFirstStructureOfType` + `Game.SpawnPrefab` on a 3s delay.
+
+### Fixes
+- **`!alien` commander seat**: clearing Wildlife commander seat when a player uses `!alien` while being Wildlife commander (matched behavior already in `!sol` / `!centauri`). Prior bug left `_wildlifeSetup.Commander` dangling so `!wildcom` rejected other players.
+- **Projectile friendly-fire reflection**: cached `PropertyInfo`/`FieldInfo` for `ProjectileBasic.Team` at init instead of per-impact `GetType().GetProperty()` + `GetType().GetField()`. Was running hundreds of times per second in heavy combat.
+
+### Notes
+- Multi-alien-team super-weapon handling and range-based cannon aim live in Si_CrabCannon (v2.7.0), not here. Si_4way no longer has any cross-mod patches on CrabCannon — the CrabCannon mod detects multiple alien-side teams (Alien + Wildlife) on its own.
+- `ProcessNetRPC` prefix remains (TeamUI.cs) — early-returns on non-matching RPC byte, overhead is negligible.
+
+---
+
+## v1.7.1 (2026-04-12) — Alliance hot-path optimization
+
+### Perf
+- `AreTeamsAllied`: dropped two `Team.IsSpecial` property reads (virtual calls in Il2Cpp) in favor of pure reference compares against cached `_solTeam` / `_centTeam`. Branchless bool ops (`&`/`|`).
+- Rationale: `GetTeamsAreEnemy` is called by the engine ~500k times per 20s (damage, targeting, FOW, voice). Profiler (Si_ModPerfMonitor) showed the postfix burning ~95ms/20s sustained; this trims roughly half of the body cost.
+- Behavior unchanged: same alliance rules, same null/same-team edge cases.
+
 ## v1.6.0 (2026-03-28) — Win Conditions + Sounds + Migration
 
 ### New

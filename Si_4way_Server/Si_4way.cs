@@ -7,7 +7,7 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(Si_4way.Si_4way), "Si_4way", "1.7.0", "DrMuck")]
+[assembly: MelonInfo(typeof(Si_4way.Si_4way), "Si_4way", "1.8.0", "DrMuck")]
 [assembly: MelonGame("Bohemia Interactive", "Silica")]
 
 namespace Si_4way
@@ -20,6 +20,7 @@ namespace Si_4way
     {
         // === Shared state ===
         public static bool Is4WayEnabled = false;
+        internal static bool _dualHQEnabled = false;
         internal static int _balanceTolerance = 1;
 
         // === Events for cross-mod communication (Option A) ===
@@ -33,6 +34,11 @@ namespace Si_4way
         internal static Type _gameType = null;
         internal static MethodInfo _spawnPrefabMethod = null;
         internal static MethodInfo _onMissionStateChangedMethod = null;
+
+        // Cached projectile Team accessor (avoids per-impact reflection)
+        internal static PropertyInfo _projTeamProperty = null;
+        internal static FieldInfo _projTeamField = null;
+
 
         internal static BaseTeamSetup _wildlifeSetup = null;
         internal static Team _wildlifeTeam = null;
@@ -80,7 +86,7 @@ namespace Si_4way
             Commands.RegisterCommands();
 
             FindTeams();
-            MelonLogger.Msg($"Si_4way v1.7.0 loaded ({(IsServer ? "SERVER" : "CLIENT")})");
+            MelonLogger.Msg($"Si_4way v1.8.0 loaded ({(IsServer ? "SERVER" : "CLIENT")})");
         }
 
         // === Vote intercept ===
@@ -100,6 +106,8 @@ namespace Si_4way
             _commanderApplicants.Clear();
             _lotteryDone = false;
             NestSpawn.ScheduleNestSpawn();
+            if (_dualHQEnabled)
+                NestSpawn.ScheduleDualHQSpawn();
 
             // Fire event for cross-mod communication
             try
@@ -120,7 +128,6 @@ namespace Si_4way
         {
             if (!Is4WayEnabled || !IsServer) return;
             NestSpawn.OnLateUpdate();
-            WinCondition.OnLateUpdate();
         }
 
         // === Teams ===

@@ -24,6 +24,7 @@ namespace Si_4way
                     HelperMethods.RegisterPlayerCommand("sol", OnCmdSol, true);
                     HelperMethods.RegisterPlayerCommand("centauri", OnCmdCentauri, true);
                     HelperMethods.RegisterAdminCommand("4waytol", OnCmd4WayTol, Power.Commander, "Set 4-way balance tolerance. Usage: !4waytol <number>");
+                    HelperMethods.RegisterAdminCommand("dualhq", OnCmdDualHQ, Power.Commander, "Toggle Dual HQ mode (Sol gets Cent HQ, Cent gets Sol HQ)");
                     HelperMethods.RegisterPlayerCommand("transfer", OnCmdTransfer, true);
                 }
                 catch (Exception ex)
@@ -182,9 +183,34 @@ namespace Si_4way
                 return;
             }
 
+            // Clear Wildlife commander seat if this player held it
+            if (_wildlifeSetup != null && _wildlifeSetup.Commander == player)
+            {
+                try
+                {
+                    var gm = GameMode.CurrentGameMode;
+                    if (gm != null && _setCommanderMethod != null)
+                    {
+                        _setCommanderMethod.Invoke(gm, new object[] { _wildlifeTeam, null });
+                        if (_synchCommanderMethod != null)
+                            _synchCommanderMethod.Invoke(gm, new object[] { _wildlifeTeam });
+                        MelonLogger.Msg($"[4WAY] Cleared Wildlife commander seat (was {player.PlayerName})");
+                    }
+                }
+                catch { }
+            }
+
             UntrackWildlifeMember(player);
             SendToPlayer(player, "Set to Alien side. Use H to join Alien via UI, or !wildlife to switch back.");
             MelonLogger.Msg($"[4WAY] {player.PlayerName} switched to Alien sub-team");
+        }
+
+        private static void OnCmdDualHQ(Player? player, string args)
+        {
+            _dualHQEnabled = !_dualHQEnabled;
+            string state = _dualHQEnabled ? "ENABLED" : "DISABLED";
+            SendToAll($"Dual HQ mode {state}. Next round: Sol gets Cent HQ, Cent gets Sol HQ.");
+            MelonLogger.Msg($"[4WAY] Dual HQ {state}");
         }
 
         private static void OnCmd4WayTol(Player? player, string args)

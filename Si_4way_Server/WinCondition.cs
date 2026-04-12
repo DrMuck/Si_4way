@@ -9,23 +9,22 @@ using UnityEngine;
 namespace Si_4way
 {
     /// <summary>
-    /// Win conditions: GetHasLost, migration, end-round trigger, sound announcements
+    /// Win conditions: event-based detection via OnStructureDestroyed / OnUnitDestroyed.
+    /// Handles migration, end-round trigger, sound announcements.
     /// </summary>
     public partial class Si_4way
     {
         private static bool _alienQueenDead = false;
-        private static bool _alienQueenWasAlive = true;
-        private static bool _wildlifeQueenWasAlive = true;
-        private static bool _solHQWasAlive = true;
-        private static bool _centHQWasAlive = true;
+        private static bool _wildlifeQueenDead = false;
+        private static bool _solHQDead = false;
+        private static bool _centHQDead = false;
         private static bool _gameEndTriggered = false;
-        private static float _winCheckTimer = 0f;
-        private const float WIN_CHECK_INTERVAL = 0.2f;
 
         internal static class WinCondition
         {
             public static void RegisterPatches(HarmonyLib.Harmony harmony)
             {
+                // GetHasLost — linked elimination (keeps allied team alive)
                 var getHasLost = typeof(StrategyTeamSetup).GetMethod("GetHasLost",
                     BindingFlags.Public | BindingFlags.Instance);
                 if (getHasLost != null)
@@ -34,114 +33,124 @@ namespace Si_4way
                         postfix: new HarmonyMethod(typeof(Si_4way), nameof(Postfix_GetHasLost)));
                     MelonLogger.Msg("Patched GetHasLost");
                 }
+
+                // OnStructureDestroyed — fires when a structure is destroyed in combat
+                var onStructDestroyed = typeof(MP_Strategy).GetMethod("OnStructureDestroyed",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (onStructDestroyed != null)
+                {
+                    harmony.Patch(onStructDestroyed,
+                        postfix: new HarmonyMethod(typeof(Si_4way), nameof(Postfix_OnStructureDestroyed)));
+                    MelonLogger.Msg("Patched MP_Strategy.OnStructureDestroyed");
+                }
+
+                // OnUnitDestroyed — fires when a unit is destroyed (queen is a unit)
+                var onUnitDestroyed = typeof(StrategyMode).GetMethod("OnUnitDestroyed",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (onUnitDestroyed != null)
+                {
+                    harmony.Patch(onUnitDestroyed,
+                        postfix: new HarmonyMethod(typeof(Si_4way), nameof(Postfix_OnUnitDestroyed)));
+                    MelonLogger.Msg("Patched StrategyMode.OnUnitDestroyed");
+                }
             }
 
             public static void ResetState()
             {
                 _alienQueenDead = false;
-                _alienQueenWasAlive = true;
-                _wildlifeQueenWasAlive = true;
-                _solHQWasAlive = true;
-                _centHQWasAlive = true;
+                _wildlifeQueenDead = false;
+                _solHQDead = false;
+                _centHQDead = false;
                 _gameEndTriggered = false;
-            }
-
-            public static void OnLateUpdate()
-            {
-                if (GameMode.CurrentGameMode == null || !GameMode.CurrentGameMode.GameBegun) return;
-                if (_alienTeam == null || _wildlifeTeam == null) return;
-
-                // Throttle: only check every 200ms instead of every frame
-                _winCheckTimer -= UnityEngine.Time.deltaTime;
-                if (_winCheckTimer > 0f) return;
-                _winCheckTimer = WIN_CHECK_INTERVAL;
-
-                bool alienHasCritical = HasCriticalStructure(_alienTeam);
-                bool wildlifeHasCritical = HasCriticalStructure(_wildlifeTeam);
-
-                // Alien queen death → migrate to Wildlife
-                if (!alienHasCritical && _alienQueenWasAlive)
-                {
-                    _alienQueenWasAlive = false;
-                    _alienQueenDead = true;
-                    PlaySoundToAll("sounds\\alien_queen_lost.wav");
-                    if (wildlifeHasCritical)
-                        MigratePlayersToAlly(_alienTeam, _wildlifeTeam, "Alien queen fallen!");
-                }
-
-                // Wildlife queen death → migrate to Alien
-                if (!wildlifeHasCritical && _wildlifeQueenWasAlive)
-                {
-                    _wildlifeQueenWasAlive = false;
-                    PlaySoundToAll("sounds\\wildlife_queen_lost.wav");
-                    if (alienHasCritical)
-                        MigratePlayersToAlly(_wildlifeTeam, _alienTeam, "Wildlife queen fallen!");
-                }
-
-                // Human side migrations
-                if (_solTeam != null && _centTeam != null)
-                {
-                    bool solHasCritical = HasCriticalStructure(_solTeam);
-                    bool centHasCritical = HasCriticalStructure(_centTeam);
-
-                    if (!solHasCritical && _solHQWasAlive)
-                    {
-                        _solHQWasAlive = false;
-                        PlaySoundToAll("sounds\\sol_hq_lost.wav");
-                        if (centHasCritical)
-                            MigratePlayersToAlly(_solTeam, _centTeam, "Sol HQ destroyed!");
-                    }
-
-                    if (!centHasCritical && _centHQWasAlive)
-                    {
-                        _centHQWasAlive = false;
-                        PlaySoundToAll("sounds\\centauri_hq_lost.wav");
-                        if (solHasCritical)
-                            MigratePlayersToAlly(_centTeam, _solTeam, "Centauri HQ destroyed!");
-                    }
-                }
-
-                // End-round: both queens dead
-                if (!_gameEndTriggered && !alienHasCritical && !wildlifeHasCritical)
-                {
-                    _gameEndTriggered = true;
-                    TriggerEndRound("Both Alien queens destroyed — Humans win!", aliensWin: false);
-                }
-
-                // End-round: all human HQs dead
-                if (!_gameEndTriggered)
-                {
-                    bool anyHumanCritical = false;
-                    foreach (var t in Team.Teams)
-                    {
-                        if (t != null && t != _alienTeam && t != _wildlifeTeam && !t.IsSpecial)
-                        {
-                            if (t.GetHasAnyCritical()) { anyHumanCritical = true; break; }
-                        }
-                    }
-                    if (!anyHumanCritical)
-                    {
-                        _gameEndTriggered = true;
-                        TriggerEndRound("All Human HQs destroyed — Aliens win!", aliensWin: true);
-                    }
-                }
             }
         }
 
-        /// <summary>
-        /// Lightweight check: only iterates structures (not units) for Critical flag.
-        /// Much cheaper than Team.GetHasAnyCritical() which also iterates all units.
-        /// </summary>
-        private static bool HasCriticalStructure(Team team)
+        // === Event handler: structure destroyed in combat ===
+        public static void Postfix_OnStructureDestroyed(Structure __0, GameObject __1)
         {
-            if (team == null) return false;
-            foreach (var structure in team.Structures)
+            if (!Is4WayEnabled || !IsServer || _gameEndTriggered) return;
+            if (__0 == null) return;
+            if (GameMode.CurrentGameMode == null || !GameMode.CurrentGameMode.GameOngoing) return;
+
+            var team = ((BaseGameObject)__0).Team;
+            if (team == null) return;
+            if (__0.ObjectInfo == null || !__0.ObjectInfo.Critical) return;
+
+            MelonLogger.Msg($"[4WAY] Critical structure destroyed: {__0.ObjectInfo.DisplayName} on {team.TeamShortName}");
+            OnCriticalLost(team);
+        }
+
+        // === Event handler: unit destroyed (queen) ===
+        public static void Postfix_OnUnitDestroyed(Unit __0, GameObject __1)
+        {
+            if (!Is4WayEnabled || !IsServer || _gameEndTriggered) return;
+            if (__0 == null) return;
+            if (GameMode.CurrentGameMode == null || !GameMode.CurrentGameMode.GameOngoing) return;
+
+            var team = ((BaseGameObject)__0).Team;
+            if (team == null) return;
+            if (__0.ObjectInfo == null || !__0.ObjectInfo.Critical) return;
+
+            MelonLogger.Msg($"[4WAY] Critical unit destroyed: {__0.ObjectInfo.DisplayName} on {team.TeamShortName}");
+            OnCriticalLost(team);
+        }
+
+        // === Shared logic: a critical object was destroyed on a team ===
+        private static void OnCriticalLost(Team team)
+        {
+            // Only act if the team has NO remaining criticals
+            if (team.GetHasAnyCritical()) return;
+
+            // Alien queen lost
+            if (team == _alienTeam && !_alienQueenDead)
             {
-                if (structure != null && structure.ObjectInfo != null &&
-                    structure.ObjectInfo.Critical && !structure.IsDestroyed)
-                    return true;
+                _alienQueenDead = true;
+                PlaySoundToAll("sounds\\alien_queen_lost.wav");
+                if (_wildlifeTeam != null && !_wildlifeQueenDead)
+                    MigratePlayersToAlly(_alienTeam, _wildlifeTeam, "Alien queen fallen!");
             }
-            return false;
+
+            // Wildlife queen lost
+            if (team == _wildlifeTeam && !_wildlifeQueenDead)
+            {
+                _wildlifeQueenDead = true;
+                PlaySoundToAll("sounds\\wildlife_queen_lost.wav");
+                if (_alienTeam != null && !_alienQueenDead)
+                    MigratePlayersToAlly(_wildlifeTeam, _alienTeam, "Wildlife queen fallen!");
+            }
+
+            // Sol HQ lost
+            if (team == _solTeam && !_solHQDead)
+            {
+                _solHQDead = true;
+                PlaySoundToAll("sounds\\sol_hq_lost.wav");
+                if (_centTeam != null && !_centHQDead)
+                    MigratePlayersToAlly(_solTeam, _centTeam, "Sol HQ destroyed!");
+            }
+
+            // Centauri HQ lost
+            if (team == _centTeam && !_centHQDead)
+            {
+                _centHQDead = true;
+                PlaySoundToAll("sounds\\centauri_hq_lost.wav");
+                if (_solTeam != null && !_solHQDead)
+                    MigratePlayersToAlly(_centTeam, _solTeam, "Centauri HQ destroyed!");
+            }
+
+            // End-round: both alien queens dead → humans win
+            if (!_gameEndTriggered && _alienQueenDead && _wildlifeQueenDead)
+            {
+                _gameEndTriggered = true;
+                TriggerEndRound("Both Alien queens destroyed — Humans win!", aliensWin: false);
+                return;
+            }
+
+            // End-round: all human HQs dead → aliens win
+            if (!_gameEndTriggered && _solHQDead && _centHQDead)
+            {
+                _gameEndTriggered = true;
+                TriggerEndRound("All Human HQs destroyed — Aliens win!", aliensWin: true);
+            }
         }
 
         // === GetHasLost: linked elimination ===

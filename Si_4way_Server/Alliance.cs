@@ -1,5 +1,7 @@
 using HarmonyLib;
 using MelonLoader;
+using SilicaAdminMod;
+using System.Linq;
 using System.Reflection;
 using UnityEngine;
 
@@ -27,6 +29,10 @@ namespace Si_4way
                 var projType = typeof(GameMode).Assembly.GetType("ProjectileBasic");
                 if (projType != null)
                 {
+                    // Cache Team accessor once — used per-projectile-impact in prefixes below
+                    _projTeamProperty = projType.GetProperty("Team", BindingFlags.Public | BindingFlags.Instance);
+                    _projTeamField = projType.GetField("Team", BindingFlags.Public | BindingFlags.Instance);
+
                     var ffImpact = projType.GetMethod("GetAllowFriendlyFireOnImpact",
                         BindingFlags.Public | BindingFlags.Instance);
                     if (ffImpact != null)
@@ -45,21 +51,32 @@ namespace Si_4way
                     }
                 }
 
-                // Shared FOW removed — DetectTarget only gives minimap dots, not fog clearing
+                // Allied voice chat: treat allied teams as same-team for voice relay
+                var getCanReceiveVoice = typeof(Player).GetMethod("GetCanReceiveVoice",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (getCanReceiveVoice != null)
+                {
+                    harmony.Patch(getCanReceiveVoice,
+                        prefix: new HarmonyMethod(typeof(Si_4way), nameof(Prefix_GetCanReceiveVoice)));
+                    MelonLogger.Msg("Patched GetCanReceiveVoice for allied voice chat");
+                }
             }
         }
 
         internal static bool AreTeamsAllied(Team t1, Team t2)
         {
+            // Hot path: called by game's GetTeamsAreEnemy on every damage/targeting/FOW check.
+            // Optimized to pure reference compares — no property reads, no virtual calls.
             if (t1 == t2) return true;
             if (t1 == null || t2 == null) return false;
-            bool t1Alien = (t1 == _alienTeam || t1 == _wildlifeTeam);
-            bool t2Alien = (t2 == _alienTeam || t2 == _wildlifeTeam);
-            if (t1Alien && t2Alien) return true;
-            bool t1Human = (!t1Alien && !t1.IsSpecial);
-            bool t2Human = (!t2Alien && !t2.IsSpecial);
-            if (t1Human && t2Human) return true;
-            return false;
+            // Alien bloc: Alien + Wildlife
+            bool t1Alien = (t1 == _alienTeam) | (t1 == _wildlifeTeam);
+            bool t2Alien = (t2 == _alienTeam) | (t2 == _wildlifeTeam);
+            if (t1Alien & t2Alien) return true;
+            // Human bloc: Sol + Cent
+            bool t1Human = (t1 == _solTeam) | (t1 == _centTeam);
+            bool t2Human = (t2 == _solTeam) | (t2 == _centTeam);
+            return t1Human & t2Human;
         }
 
         public static void Postfix_GetTeamsAreEnemy(Team team1, Team team2, ref bool __result)
@@ -67,6 +84,27 @@ namespace Si_4way
             if (!Is4WayEnabled || !__result) return;
             if (AreTeamsAllied(team1, team2))
                 __result = false;
+        }
+
+        /// <summary>
+        /// Replace GetCanReceiveVoice for allied teams.
+        /// The original method forces proximityOnly=true when teams differ,
+        /// overriding our ref parameter. So for allies we skip the original entirely.
+        /// </summary>
+        public static bool Prefix_GetCanReceiveVoice(Player __instance, Player fromPlayer, bool proximityOnly, ref bool __result)
+        {
+            if (!Is4WayEnabled) return true; // let original run
+            if (fromPlayer == null || __instance == null) return true;
+            if (fromPlayer.Team == null || __instance.Team == null) return true;
+            if (fromPlayer.IsMuted) { __result = false; return false; }
+            // Same team → let original handle it
+            if (fromPlayer.Team == __instance.Team) return true;
+            // Not allied → let original handle it
+            if (!AreTeamsAllied(fromPlayer.Team, __instance.Team)) return true;
+
+            // Allied teams: treat as same team — allow team voice (skip proximity check)
+            __result = true;
+            return false; // skip original
         }
 
         public static bool Prefix_GetAllowFriendlyFireOnImpact(object __instance, GameObject target, ref bool __result)
@@ -78,8 +116,8 @@ namespace Si_4way
                 var baseObj = target.GetComponent<BaseGameObject>();
                 if (baseObj == null) baseObj = target.GetComponentInParent<BaseGameObject>();
                 if (baseObj == null || baseObj.Team == null) return true;
-                var projTeam = __instance.GetType().GetProperty("Team")?.GetValue(__instance) as Team
-                            ?? __instance.GetType().GetField("Team")?.GetValue(__instance) as Team;
+                var projTeam = _projTeamProperty?.GetValue(__instance) as Team
+                            ?? _projTeamField?.GetValue(__instance) as Team;
                 if (projTeam == null) return true;
                 if (projTeam != baseObj.Team && AreTeamsAllied(projTeam, baseObj.Team))
                 {
@@ -99,8 +137,8 @@ namespace Si_4way
             {
                 var owner = targetDamageManager.Owner;
                 if (owner == null || owner.Team == null) return true;
-                var projTeam = __instance.GetType().GetProperty("Team")?.GetValue(__instance) as Team
-                            ?? __instance.GetType().GetField("Team")?.GetValue(__instance) as Team;
+                var projTeam = _projTeamProperty?.GetValue(__instance) as Team
+                            ?? _projTeamField?.GetValue(__instance) as Team;
                 if (projTeam == null) return true;
                 if (projTeam != owner.Team && AreTeamsAllied(projTeam, owner.Team))
                 {
