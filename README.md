@@ -25,9 +25,21 @@
 | `!4waytol` | Admin | Set balance tolerance (default: 1) |
 
 ## Requirements
-- **Server**: `Si_4way.dll` in Mods folder
-- **Client**: `Si_4way.dll` in Mods folder (required for Wildlife UI)
-- **AdminMod**: Required (Si_AdminMod.dll)
+
+### Server (dedicated)
+- `Si_4way.dll` (server build from `Si_4way_Server/`) in `Mods/`
+- `Si_AdminMod.dll` — required for chat command registration and helper methods
+- `Si_Logging.dll` — optional, used for HL-style log lines
+
+### Client
+- `Si_4way.dll` (client build from `Si_4way_Client/`) in `Mods/`
+- **That's it.** The client build has no dependency on AdminMod or Logging.
+  Those mods are server-only and should **not** be installed on clients —
+  they register chat commands, hook damage events, and perform actions that
+  are meaningless (or harmful) when duplicated on every client.
+
+The server and client builds share the same assembly name (`Si_4way.dll`)
+but are different binaries. Do not mix them.
 
 ## Important: Mod Compatibility
 The following mods must be **DISABLED** when running Si_4way:
